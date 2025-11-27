@@ -69,14 +69,14 @@ export default async function bookingRoutes(fastify, options) {
     }
   });
 
-  // 2. GET BOOKING STATUS (New!)
+  // 2. GET BOOKING STATUS
   // Endpoint: GET /api/bookings/:trackingId
   fastify.get("/bookings/:trackingId", async (request, reply) => {
     const { trackingId } = request.params;
 
-    // We check if the user provided the "TR-XXXX" string OR the numeric ID
+    // ADDED: updated_at
     const query = `
-      SELECT id, tracking_id, customer_name, device_type, status, created_at
+      SELECT id, tracking_id, customer_name, device_type, status, created_at, updated_at 
       FROM bookings 
       WHERE tracking_id = $1 OR id::text = $1
     `;
@@ -96,7 +96,8 @@ export default async function bookingRoutes(fastify, options) {
         customer: booking.customer_name,
         device: booking.device_type,
         status: booking.status,
-        date: booking.created_at,
+        date: booking.created_at, // "Booked" Date
+        updatedAt: booking.updated_at, // "Last Updated" Date (New!)
       };
     } catch (err) {
       request.log.error(err);
