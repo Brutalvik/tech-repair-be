@@ -8,21 +8,13 @@ import healthRoutes from "./routes/health.mjs";
 import bookingRoutes from "./routes/bookings.mjs";
 import adminRoutes from "./routes/admin.mjs";
 
-// --- DEBUGGING LOG (Add this) ---
-console.log("------------------------------------------------");
-console.log("DEBUG: Loading .env file...");
-if (!process.env.DATABASE_URL) {
-  console.error("❌ ERROR: DATABASE_URL is missing or undefined!");
-} else {
-  console.log("✅ SUCCESS: Found DATABASE_URL:", process.env.DATABASE_URL);
-}
-console.log("------------------------------------------------");
-// --------------------------------
-
 const fastify = Fastify({ logger: true });
 
 // 1. Plugins
-await fastify.register(cors, { origin: true });
+await fastify.register(cors, {
+  origin: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+});
 await fastify.register(fastifyPostgres, {
   connectionString: process.env.DATABASE_URL,
 });
