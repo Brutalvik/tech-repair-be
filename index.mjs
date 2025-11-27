@@ -1,0 +1,35 @@
+import "dotenv/config";
+import Fastify from "fastify";
+import cors from "@fastify/cors";
+import fastifyPostgres from "@fastify/postgres";
+
+// Routes
+import healthRoutes from "./routes/health.mjs";
+import bookingRoutes from "./routes/bookings.mjs";
+import adminRoutes from "./routes/admin.mjs";
+
+const fastify = Fastify({ logger: true });
+
+// 1. Plugins
+await fastify.register(cors, { origin: true });
+await fastify.register(fastifyPostgres, {
+  connectionString: process.env.DATABASE_URL,
+});
+
+// 2. Register Routes
+await fastify.register(healthRoutes); // Root route (/)
+await fastify.register(bookingRoutes, { prefix: "/api" }); // /api/bookings
+await fastify.register(adminRoutes, { prefix: "/api" }); //api/admin
+
+// 3. Start Server
+const start = async () => {
+  try {
+    // Cloud Run requires port 8080, but locally we use 9000.
+    // This logic handles both perfectly.
+    await fastify.listen({ port: process.env.PORT || 9000, host: "0.0.0.0" });
+  } catch (err) {
+    fastify.log.error(err);
+    process.exit(1);
+  }
+};
+start();
