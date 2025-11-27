@@ -2,7 +2,7 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "Backend service for Infinite Tech Repairs",
-  "main": "index.mjs",
+  "main": "function_handler.mjs",
   "type": "module",
   "scripts": {
     "dev": "nodemon index.mjs"
