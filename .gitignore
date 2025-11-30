@@ -1,1 +1,71 @@
+Created by Gemini (Optimized for Next.js and Vercel Deployment)
+
+###########################
+
+1. Next.js / Vercel Build Artifacts
+
+###########################
+.next/
+out/
+.vercel/
+.turbo/
+.turbopack/
+
+###########################
+
+2. Dependencies
+
+###########################
+node_modules
+/coverage
+
+###########################
+
+3. Environment and Secrets (CRITICAL)
+
+###########################
+
+Prevents deployment secrets (database passwords, API keys) from being committed.
+
 .env
+.env.local
+.env.development
+.env.production
+
+###########################
+
+4. Logs and Cache
+
+###########################
+npm-debug.log
+*.log
+yarn-error.log
+
+Temporary build directories (e.g., from tools/bundlers)
+
+/tmp
+
+###########################
+
+5. OS and Editor Files
+
+###########################
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+###########################
+
+6. Backend Integration Files
+
+###########################
+
+We specifically ignore files related to the backend setup that are temporary or system-generated.
+
+NOTE: The Fastify 'routes/' folder and 'app/api/[[...route]]/route.mjs' should NOT be ignored,
+
+as they are required for Vercel deployment.
+
+*.tsbuildinfo
+*.js.map
