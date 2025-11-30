@@ -2,6 +2,10 @@
  * Admin Routes
  * Manage bookings, search, and archiving.
  */
+
+// CRITICAL: Import the email service module
+import { sendStatusUpdate } from "./emailService.mjs";
+
 export default async function adminRoutes(fastify, options) {
   // 1. GET BOOKINGS (With Global Search)
   fastify.get("/api/admin/bookings", async (request, reply) => {
@@ -13,8 +17,6 @@ export default async function adminRoutes(fastify, options) {
 
       if (q) {
         // GLOBAL SEARCH: Search both Active AND Archived tables
-        // We add a 'source' column to distinguish them easily if needed,
-        // and ensure archived_at is NULL for active records to match columns.
         query = `
           SELECT id, tracking_id, customer_name, device_type, status, created_at, email, booking_time, updated_at, NULL as archived_at
           FROM bookings 
@@ -67,20 +69,42 @@ export default async function adminRoutes(fastify, options) {
       return { error: `Invalid status. Allowed: ${validStatuses.join(", ")}` };
     }
 
+    // 1. Fetch customer details BEFORE updating status
+    const fetchQuery =
+      "SELECT customer_name, email, device_type, tracking_id FROM bookings WHERE id = $1";
+    const fetchResult = await fastify.pg.query(fetchQuery, [id]);
+
+    if (fetchResult.rows.length === 0) {
+      reply.code(404);
+      return { error: "Booking ID not found" };
+    }
+    const bookingDetails = fetchResult.rows[0];
+
     try {
-      const query = `
+      // 2. Update status in the database
+      const updateQuery = `
         UPDATE bookings 
         SET status = $1, updated_at = NOW() 
         WHERE id = $2 
         RETURNING id, tracking_id, status, updated_at;
       `;
 
-      const result = await fastify.pg.query(query, [status, id]);
+      const result = await fastify.pg.query(updateQuery, [status, id]);
 
-      if (result.rows.length === 0) {
-        reply.code(404);
-        return { error: "Booking ID not found" };
-      }
+      // 3. Trigger email notification (Non-blocking)
+      const emailBookingData = {
+        trackingId: bookingDetails.tracking_id,
+        customerName: bookingDetails.customer_name,
+        email: bookingDetails.email,
+        deviceType: bookingDetails.device_type,
+      };
+
+      // Ensure we send the new status
+      sendStatusUpdate(emailBookingData, status).catch((err) =>
+        request.log.error(
+          `Failed to send status update email for ${bookingDetails.tracking_id}: ${err.message}`
+        )
+      );
 
       return {
         success: true,
@@ -95,7 +119,6 @@ export default async function adminRoutes(fastify, options) {
   });
 
   // 3. ARCHIVE BOOKING (New!)
-  // Moves record from 'bookings' to 'archived_bookings' safely
   fastify.post("/api/admin/bookings/:id/archive", async (request, reply) => {
     const { id } = request.params;
     const client = await fastify.pg.connect(); // Get a client for transaction
@@ -143,7 +166,6 @@ export default async function adminRoutes(fastify, options) {
   });
 
   // 4. GET ARCHIVED BOOKINGS
-  // Endpoint: GET /api/admin/archived-bookings
   fastify.get("/api/admin/archived-bookings", async (request, reply) => {
     try {
       const query = `

@@ -6,9 +6,19 @@
  */
 
 import "dotenv/config"; // Loads variables from .env
+import { sendBookingConfirmation } from "./emailService.mjs";
+
+// --- HELPER FUNCTION: Random 4-digit ID (Reverted) ---
+// WARNING: This method risks collisions and is not guaranteed unique.
+function generateRandomTrackingId() {
+  // Generate a number between 1000 and 9999
+  const randomNumber = Math.floor(1000 + Math.random() * 9000);
+  return `TR-${randomNumber}`;
+}
 
 export default async function bookingRoutes(fastify, options) {
   // 1. CREATE BOOKING
+  // Path is /api/bookings (since it is defined here, index.mjs should register this route without a prefix)
   fastify.post("/api/bookings", async (request, reply) => {
     const {
       customerName,
@@ -28,14 +38,14 @@ export default async function bookingRoutes(fastify, options) {
       return { error: "Missing required fields" };
     }
 
-    // Generate random tracking string like "TR-8492"
-    const trackingString = "TR-" + Math.floor(1000 + Math.random() * 9000);
+    // CRITICAL CHANGE: Generate RANDOM tracking ID (Reverted to original request)
+    const trackingString = generateRandomTrackingId();
 
     const query = `
       INSERT INTO bookings 
       (tracking_id, customer_name, email, phone, device_type, issue_description, service_type, location_id, booking_date, booking_time, images, status)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'Booked')
-      RETURNING id, tracking_id;
+      RETURNING id, tracking_id, created_at;
     `;
 
     const values = [
@@ -55,26 +65,46 @@ export default async function bookingRoutes(fastify, options) {
     try {
       const result = await fastify.pg.query(query, values);
       const savedBooking = result.rows[0];
-      request.log.info(`Booking Created: ${savedBooking.id}`);
+      const trackingId = savedBooking.tracking_id;
+
+      // 2. TRIGGER EMAIL CONFIRMATION (Non-blocking)
+      const emailBookingData = {
+        trackingId: trackingId,
+        customerName: customerName,
+        email: email,
+        deviceType: deviceType,
+        bookingDate: bookingDate,
+        bookingTime: bookingTime,
+      };
+
+      sendBookingConfirmation(emailBookingData).catch((err) =>
+        request.log.error(
+          `Failed to send confirmation email for ${trackingId}: ${err.message}`
+        )
+      );
+
+      request.log.info(
+        `Booking Created: ${savedBooking.id} and email triggered.`
+      );
+
       return {
         success: true,
         dbId: savedBooking.id,
-        trackingId: savedBooking.tracking_id,
+        trackingId: trackingId,
         message: "Booking confirmed successfully",
       };
     } catch (err) {
       request.log.error(err);
+      // NOTE: If this fails, it might be due to a duplicate TR-XXXX ID.
       reply.code(500);
       return { error: "Database insertion failed", details: err.message };
     }
   });
 
-  // 2. GET BOOKING STATUS
-  // Endpoint: GET /api/bookings/:trackingId
+  // 3. GET BOOKING STATUS (Unchanged)
   fastify.get("/api/bookings/:trackingId", async (request, reply) => {
     const { trackingId } = request.params;
 
-    // ADDED: updated_at
     const query = `
       SELECT id, tracking_id, customer_name, device_type, status, created_at, updated_at 
       FROM bookings 
@@ -96,8 +126,8 @@ export default async function bookingRoutes(fastify, options) {
         customer: booking.customer_name,
         device: booking.device_type,
         status: booking.status,
-        date: booking.created_at, // "Booked" Date
-        updatedAt: booking.updated_at, // "Last Updated" Date (New!)
+        date: booking.created_at,
+        updatedAt: booking.updated_at,
       };
     } catch (err) {
       request.log.error(err);
