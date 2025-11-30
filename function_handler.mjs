@@ -33,8 +33,6 @@ async function buildFastifyApp() {
   });
 
   // Database Connection
-  // NOTE: Cloud Functions should use the Cloud SQL Proxy connector,
-  // but we use DATABASE_URL for simplicity here, assuming the function has the right access scope.
   await fastify.register(fastifyPostgres, {
     connectionString: process.env.DATABASE_URL,
   });

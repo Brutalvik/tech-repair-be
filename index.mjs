@@ -20,9 +20,9 @@ await fastify.register(fastifyPostgres, {
 });
 
 // 2. Register Routes
-await fastify.register(healthRoutes); // Root route (/)
-await fastify.register(bookingRoutes, { prefix: "/api" }); // /api/bookings
-await fastify.register(adminRoutes, { prefix: "/api" }); //api/admin
+await fastify.register(healthRoutes); // Path: /
+await fastify.register(bookingRoutes); // Paths: /api/bookings, /api/bookings/:id
+await fastify.register(adminRoutes); // Paths: /api/admin/bookings
 
 // 3. Start Server
 const start = async () => {
@@ -30,6 +30,7 @@ const start = async () => {
     // Cloud Run requires port 8080, but locally we use 9000.
     // This logic handles both perfectly.
     await fastify.listen({ port: process.env.PORT || 9000, host: "0.0.0.0" });
+    console.log(`Server listening on port ${process.env.PORT}`);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
