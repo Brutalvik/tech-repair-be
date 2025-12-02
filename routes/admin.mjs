@@ -6,18 +6,48 @@
 // CRITICAL: Import the email service module
 import { sendStatusUpdate } from "./emailService.mjs";
 
+// Helper function to handle parsing limit/offset and ensuring a safe max limit
+const getPaginationParams = (query) => {
+  const limit = parseInt(query.limit) || 20;
+  const offset = parseInt(query.offset) || 0;
+  // Set a safe maximum limit, e.g., 100
+  const safeLimit = Math.min(limit, 100);
+
+  return { safeLimit, offset };
+};
+
 export default async function adminRoutes(fastify, options) {
-  // 1. GET BOOKINGS (With Global Search)
+  // 1. GET BOOKINGS (With Global Search, Pagination & Count)
   fastify.get("/api/admin/bookings", async (request, reply) => {
     const { q } = request.query;
+    const { safeLimit, offset } = getPaginationParams(request.query);
 
     try {
-      let query;
+      let dataQuery;
+      let countQuery;
       let values = [];
+      let countValues = [];
 
       if (q) {
         // GLOBAL SEARCH: Search both Active AND Archived tables
-        query = `
+
+        // --- 1. COUNT QUERY ---
+        // Need to count the total rows across the UNION
+        countQuery = `
+          SELECT COUNT(*) FROM (
+            SELECT id FROM bookings 
+            WHERE customer_name ILIKE $1 OR email ILIKE $1 OR tracking_id ILIKE $1
+            
+            UNION ALL
+            
+            SELECT original_id as id FROM archived_bookings 
+            WHERE customer_name ILIKE $1 OR email ILIKE $1 OR tracking_id ILIKE $1
+          ) AS total_count;
+        `;
+        countValues = [`%${q}%`];
+
+        // --- 2. DATA QUERY ---
+        dataQuery = `
           SELECT id, tracking_id, customer_name, device_type, status, created_at, email, booking_time, updated_at, NULL as archived_at
           FROM bookings 
           WHERE customer_name ILIKE $1 OR email ILIKE $1 OR tracking_id ILIKE $1
@@ -29,21 +59,41 @@ export default async function adminRoutes(fastify, options) {
           WHERE customer_name ILIKE $1 OR email ILIKE $1 OR tracking_id ILIKE $1
           
           ORDER BY created_at DESC 
-          LIMIT 50
+          LIMIT $2 OFFSET $3; -- Apply LIMIT and OFFSET
         `;
-        values = [`%${q}%`];
+        values = [`%${q}%`, safeLimit, offset]; // $1=q, $2=limit, $3=offset
       } else {
-        // DEFAULT: Show only Active Bookings (Latest 50)
-        query = `
+        // DEFAULT: Show only Active Bookings
+
+        // --- 1. COUNT QUERY ---
+        countQuery = `SELECT COUNT(*) FROM bookings;`;
+        countValues = [];
+
+        // --- 2. DATA QUERY ---
+        dataQuery = `
           SELECT id, tracking_id, customer_name, device_type, status, created_at, email, booking_time, updated_at, NULL as archived_at
           FROM bookings 
           ORDER BY created_at DESC 
-          LIMIT 50
+          LIMIT $1 OFFSET $2; -- Apply LIMIT and OFFSET
         `;
+        values = [safeLimit, offset]; // $1=limit, $2=offset
       }
 
-      const result = await fastify.pg.query(query, values);
-      return result.rows;
+      // Execute both queries
+      const [dataResult, countResult] = await Promise.all([
+        fastify.pg.query(dataQuery, values),
+        fastify.pg.query(countQuery, countValues),
+      ]);
+
+      const totalCount = parseInt(countResult.rows[0].count, 10);
+
+      // Return data and count for pagination
+      return {
+        total: totalCount,
+        limit: safeLimit,
+        offset: offset,
+        data: dataResult.rows,
+      };
     } catch (err) {
       request.log.error(err);
       reply.code(500);
@@ -51,7 +101,7 @@ export default async function adminRoutes(fastify, options) {
     }
   });
 
-  // 2. UPDATE STATUS
+  // 2. UPDATE STATUS (NO CHANGE)
   fastify.patch("/api/admin/bookings/:id/status", async (request, reply) => {
     const { id } = request.params;
     const { status } = request.body;
@@ -118,7 +168,7 @@ export default async function adminRoutes(fastify, options) {
     }
   });
 
-  // 3. ARCHIVE BOOKING (New!)
+  // 3. ARCHIVE BOOKING (NO CHANGE)
   fastify.post("/api/admin/bookings/:id/archive", async (request, reply) => {
     const { id } = request.params;
     const client = await fastify.pg.connect(); // Get a client for transaction
@@ -165,10 +215,16 @@ export default async function adminRoutes(fastify, options) {
     }
   });
 
-  // 4. GET ARCHIVED BOOKINGS
+  // 4. GET ARCHIVED BOOKINGS (With Pagination & Count)
   fastify.get("/api/admin/archived-bookings", async (request, reply) => {
+    const { safeLimit, offset } = getPaginationParams(request.query);
+
     try {
-      const query = `
+      // --- 1. COUNT QUERY ---
+      const countQuery = `SELECT COUNT(*) FROM archived_bookings;`;
+
+      // --- 2. DATA QUERY ---
+      const dataQuery = `
         SELECT 
           original_id as id, 
           tracking_id, 
@@ -182,10 +238,25 @@ export default async function adminRoutes(fastify, options) {
           archived_at 
         FROM archived_bookings 
         ORDER BY archived_at DESC 
-        LIMIT 50
+        LIMIT $1 OFFSET $2; -- Apply LIMIT and OFFSET
       `;
-      const result = await fastify.pg.query(query);
-      return result.rows;
+      const values = [safeLimit, offset]; // $1=limit, $2=offset
+
+      // Execute both queries
+      const [dataResult, countResult] = await Promise.all([
+        fastify.pg.query(dataQuery, values),
+        fastify.pg.query(countQuery), // No values needed for simple count
+      ]);
+
+      const totalCount = parseInt(countResult.rows[0].count, 10);
+
+      // Return data and count for pagination
+      return {
+        total: totalCount,
+        limit: safeLimit,
+        offset: offset,
+        data: dataResult.rows,
+      };
     } catch (err) {
       request.log.error(err);
       reply.code(500);

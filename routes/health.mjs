@@ -44,7 +44,7 @@ export default async function healthRoutes(fastify, options) {
 
     try {
       // Test the DB connection
-      const result = await fastify.pg.query("SELECT NOW()");
+      const result = await fastify.pg?.query("SELECT NOW()");
       dbStatus = {
         status: "connected",
         dbTime: result.rows[0].now,
@@ -261,7 +261,7 @@ export default async function healthRoutes(fastify, options) {
               
               <header class="text-center pb-4 border-b border-cyan-900/50">
                   <h1 class="text-3xl font-extrabold text-white glow-text tracking-widest mb-1 sm:text-4xl header-title">
-                      INF. TECH REPAIRS
+                      INF. TECH repair
                   </h1>
                   <p class="text-sm text-cyan-400 terminal-text">
                       [QUANTUM DIAGNOSTICS LOG] ERA 5025 GATEWAY
